@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>DenticleShield Simulation — Untreated vs DenticleShield</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 12px; background: #f6f8fb; color:#111; }
+  #top { display:flex; gap:12px; align-items:flex-start; }
+  #controls { padding:10px; background:white; border-radius:8px; box-shadow:0 2px 6px rgba(20,30,50,0.08); }
+  label { display:block; margin:6px 0; font-size:13px; }
+  canvas { background: #ffffff; border-radius:8px; box-shadow: 0 6px 18px rgba(20,30,50,0.06); margin-top:12px; }
+  .btn { padding:6px 10px; border-radius:6px; border:1px solid #2b6cb0; background:#3182ce; color:white; cursor:pointer; display:inline-block; margin-right:6px; }
+  .btn.secondary { background:white; color:#3182ce; border:1px solid #cfe7ff; }
+  #legend { font-size:13px; margin-top:8px; }
+  #stats { margin-left: 18px; padding:10px; background:white; border-radius:8px; box-shadow:0 2px 6px rgba(20,30,50,0.04); width:300px; }
+  .small { font-size:12px; color:#555; }
+</style>
+</head>
+<body>
+<h2>DenticleShield Simulation — Untreated vs Treated</h2>
+<div id="top">
+  <div id="controls">
+    <div style="margin-bottom:8px;">
+      <button id="toggleBtn" class="btn">Show: Untreated</button>
+      <button id="resetBtn" class="btn secondary">Reset</button>
+    </div>
+    <label class="small">Bacterial load: <span id="loadVal">80</span></label>
+    <input id="loadSlider" type="range" min="10" max="250" value="80"/>
+    <label class="small">Zwitterionic layer: <input id="zwit" type="checkbox" checked /></label>
+    <label class="small">Simulation speed: <input id="speed" type="range" min="0.2" max="2.5" step="0.1" value="1"/> <span id="speedVal">1.0x</span></label>
+    <div id="legend">
+      <span style="display:inline-block;width:12px;height:12px;background:#2b6cb0;border-radius:50%;margin-right:6px;"></span>Bacteria
+      &nbsp;&nbsp;
+      <span style="display:inline-block;width:14px;height:10px;background:#cfe1ff;margin-left:8px;border:1px solid #c0d7ff;"></span> Denticle riblets
+    </div>
+  </div>
+
+  <div id="stats">
+    <div><strong>Surface:</strong> <span id="surfaceLabel">Untreated</span></div>
+    <div><strong>Attached microbes:</strong> <span id="attached">0</span></div>
+    <div><strong>Attachment % (last 200):</strong> <span id="attachPct">0%</span></div>
+    <div class="small">Click canvas to add bacteria. Toggle surface to see repulsion effect.</div>
+  </div>
+</div>
+
+<canvas id="sim" width="960" height="420"></canvas>
+
+<script>
+const canvas = document.getElementById('sim');
+const ctx = canvas.getContext('2d');
+let W = canvas.width, H = canvas.height;
+
+let mode = "untreated"; // untreated or denticle
+const toggleBtn = document.getElementById('toggleBtn');
+const resetBtn = document.getElementById('resetBtn');
+const loadSlider = document.getElementById('loadSlider');
+const loadVal = document.getElementById('loadVal');
+const attachedLabel = document.getElementById('attached');
+const attachPctLabel = document.getElementById('attachPct');
+const surfaceLabel = document.getElementById('surfaceLabel');
+const zwitBox = document.getElementById('zwit');
+const speedSlider = document.getElementById('speed');
+const speedVal = document.getElementById('speedVal');
+
+let particles = [];
+let attachedCount = 0;
+let recentAttachments = [];
+let simSpeed = 1.0;
+
+// Surface and diamond pattern
+const surfaceTop = Math.round(H*0.68);
+const diamond = {size:18, spacingX:36, spacingY:20, height:6};
+const params = {repulsionRange:26, repulsionStrength:1.0};
+
+function random(min,max){ return Math.random()*(max-min)+min; }
+
+function spawn(n){
+  for(let i=0;i<n;i++){
+    particles.push({
+      x: random(40,W-40),
+      y: random(10,80),
+      r: random(2.6,4.0),
+      vx: random(-0.3,0.3),
+      vy: random(0.25,0.9),
+      stuck:false,
+      lifetime:0
+    });
+  }
+}
+
+function reset(){
+  particles=[];
+  attachedCount=0;
+  recentAttachments=[];
+  spawn(parseInt(loadSlider.value));
+  updateStats();
+}
+
+function updateStats(){
+  loadVal.textContent = loadSlider.value;
+  attachedLabel.textContent = attachedCount;
+  surfaceLabel.textContent = mode==='untreated'?'Untreated':'DenticleShield';
+  speedVal.textContent = simSpeed.toFixed(1)+'x';
+  let pct=0;
+  if(recentAttachments.length>0){
+    const last=recentAttachments.slice(-200);
+    const pos=last.reduce((a,b)=>a+(b?1:0),0);
+    pct=Math.round(pos/last.length*100);
+  }
+  attachPctLabel.textContent=pct+'%';
+}
+
+// Event listeners
+loadSlider.addEventListener('input', ()=>{
+  loadVal.textContent = loadSlider.value;
+  const diff = parseInt(loadSlider.value)-particles.length;
+  if(diff>0) spawn(diff);
+});
+speedSlider.addEventListener('input', ()=>{
+  simSpeed = parseFloat(speedSlider.value);
+  updateStats();
+});
+canvas.addEventListener('click',(e)=>{
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX-rect.left;
+  const my = e.clientY-rect.top;
+  for(let i=0;i<8;i++){
+    particles.push({x:mx+random(-6,6), y:my+random(-6,6), r:random(2.6,4.2), vx:random(-0.6,0.6), vy:random(0.1,0.8), stuck:false, lifetime:0});
+  }
+  loadSlider.value = Math.min(250,parseInt(loadSlider.value)+8);
+  loadVal.textContent = loadSlider.value;
+});
+toggleBtn.addEventListener('click', ()=>{
+  mode = (mode==='untreated')?'denticle':'untreated';
+  toggleBtn.textContent = mode==='untreated'?'Show: Untreated':'Show: DenticleShield';
+  updateStats();
+});
+resetBtn.addEventListener('click', ()=>reset());
+
+// Diamond drawing
+function drawDiamondGrid(){
+  ctx.save();
+  ctx.translate(0,surfaceTop);
+  for(let row=-2; row<Math.ceil((H-surfaceTop)/diamond.spacingY)+6; row++){
+    const y = row*diamond.spacingY;
+    const xOffset = (row%2===0)?0:diamond.spacingX/2;
+    for(let x=-diamond.spacingX; x<W+diamond.spacingX; x+=diamond.spacingX){
+      const cx=x+xOffset;
+      ctx.beginPath();
+      ctx.moveTo(cx,y-diamond.size);
+      ctx.lineTo(cx+diamond.size,y);
+      ctx.lineTo(cx,y+diamond.size);
+      ctx.lineTo(cx-diamond.size,y);
+      ctx.closePath();
+      ctx.fillStyle='#e9f2ff';
+      ctx.fill();
+      ctx.strokeStyle='#cfe1ff';
+      ctx.lineWidth=1;
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// Adhesion logic
+function attemptAdhesion(p){
+    if(mode==='untreated'){
+        const baseProb=0.45;
+        const adj=baseProb*(0.6+Math.random()*0.8);
+        const stuck=Math.random()<adj;
+        recentAttachments.push(stuck?1:0);
+        if(recentAttachments.length>1000) recentAttachments.shift();
+        return stuck;
+    } else {
+        // DenticleShield: bacteria never attach and are repelled
+        recentAttachments.push(0);
+        if(recentAttachments.length>1000) recentAttachments.shift();
+        // Push bacteria upward and slightly sideways
+        p.vy = -Math.abs(p.vy) - 0.6;
+        p.vx += (Math.random()-0.5)*0.4;
+        p.y = surfaceTop - params.repulsionRange - Math.random()*10;
+        return false;
+    }
+}
+
+// Repulsion
+function applyRepulsion(p,dt){
+  const sec=dt/60;
+  p.vy-=params.repulsionStrength*0.25*sec*(1+Math.random()*0.4);
+  const offset=((p.x%diamond.spacingX)+diamond.spacingX)%diamond.spacingX-diamond.spacingX/2;
+  p.vx+=(offset>0?0.12:-0.12)*sec*(0.8+Math.random()*0.6);
+  p.vx*=0.98; p.vy*=0.98;
+}
+
+// Step & render
+function step(dt){
+  dt*=simSpeed;
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i];
+    if(p.stuck){p.lifetime+=dt;continue;}
+    p.vx+=random(-0.02,0.02)*(dt/6); p.vy+=random(-0.01,0.02)*(dt/6);
+    p.x+=p.vx*dt*0.9; p.y+=p.vy*dt*1.0; p.lifetime+=dt;
+
+    if(p.x<6){p.x=6;p.vx*=-0.5;} 
+    if(p.x>W-6){p.x=W-6;p.vx*=-0.5;}
+
+    if(p.y+p.r>=surfaceTop-8){
+      if(mode==='denticle'){
+        applyRepulsion(p, dt);
+        attemptAdhesion(p);
+      } else {
+        if(p.y+p.r>=surfaceTop-1){
+            p.y=Math.min(p.y,surfaceTop-p.r);
+            const stuck = attemptAdhesion(p);
+            if(stuck){p.stuck=true; attachedCount++; p.y=surfaceTop-p.r;}
+        }
+      }
+    }
+
+    if(p.lifetime>12000 && Math.random()<0.001*dt) particles.splice(i,1);
+  }
+  if(particles.length<loadSlider.value) spawn(Math.min(8,loadSlider.value-particles.length));
+}
+
+function render(){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#f7fbff'; ctx.fillRect(0,0,W,surfaceTop);
+  ctx.fillStyle='#f4f8ff'; ctx.fillRect(0,surfaceTop,W,H-surfaceTop);
+  if(mode==='denticle'){
+    drawDiamondGrid();
+    if(zwitBox.checked){
+      ctx.fillStyle='rgba(120,180,255,0.18)'; 
+      ctx.fillRect(0,surfaceTop-params.repulsionRange,W,params.repulsionRange+6);
+    }
+  } else { ctx.fillStyle='#f2f6fb'; ctx.fillRect(0,surfaceTop,W,H-surfaceTop);}
+  for(const p of particles){
+    ctx.beginPath();
+    if(p.stuck){ ctx.fillStyle='#9b2d2d'; } else { ctx.fillStyle='#2b6cb0'; }
+    ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+  }
+}
+
+let last = performance.now();
+function loop(t){const now=t; const dt=Math.min(60,now-last)/16.6; step(dt); render(); last=now; updateStats(); requestAnimationFrame(loop);}
+spawn(parseInt(loadSlider.value)); updateStats(); requestAnimationFrame(loop);
+</script>
+</body>
+</html>
